@@ -1,0 +1,26 @@
+{
+  "name": "TrackPlayer",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "start": "node node_modules/react-native/local-cli/cli.js start",
+    "test": "jest"
+  },
+  "dependencies": {
+    "expo": "^23.0.6",
+    "native-base": "^2.3.4",
+    "react": "16.0.0",
+    "react-native": "0.51.0",
+    "react-native-track-player": "^0.2.2",
+    "react-native-vector-icons": "^4.4.2"
+  },
+  "devDependencies": {
+    "babel-jest": "21.2.0",
+    "babel-preset-react-native": "4.0.0",
+    "jest": "21.2.1",
+    "react-test-renderer": "16.0.0"
+  },
+  "jest": {
+    "preset": "react-native"
+  }
+}
