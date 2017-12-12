@@ -85,7 +85,8 @@ export default class App extends React.Component {
       ],
       currentPosition: 0,
       isPlaying: false,
-      currentTrack: "AllOfMe"
+      currentTrack: "AllOfMe",
+      internet: true
     };
   }
   async setNewTrack(track) {
@@ -94,19 +95,19 @@ export default class App extends React.Component {
       RNFS.DocumentDirectoryPath + "/" + track.name + ".mp3"
     ).then(result => {
       if (result === false) {
-        console.log("downloadFile");
+        // file not found, download it
         let url = track.url;
         let path = RNFS.DocumentDirectoryPath + "/" + track.name + ".mp3";
-        RNFS.downloadFile({ fromUrl: url, toFile: path }).promise.then(res => {
-          console.log(res, "downloaded file");
-        });
+        RNFS.downloadFile({
+          fromUrl: url,
+          toFile: path
+        }).promise.then(res => {});
       } else {
-        console.log("found File", result);
+        // file found, use local path
         downPath =
           "file://" + RNFS.DocumentDirectoryPath + "/" + track.name + ".mp3";
       }
     });
-
     await TrackPlayer.add({
       id: "track" + track.id,
       url: downPath ? downPath : track.url,
@@ -136,12 +137,11 @@ export default class App extends React.Component {
     );
   }
   createSeekerListener() {
-    console.log("createSeekerListener");
     this.seeker = setInterval(async () => {
       let pos =
         (await TrackPlayer.getPosition()) / (await TrackPlayer.getDuration());
       this.refs.seeker._component.scrollTo({
-        x: width - 20 - pos * (width - 20)
+        x: pos ? width - 20 - pos * (width - 20) : width - 20
       });
       this.setState({
         currentPosition: pos ? pos * width : 0,
@@ -150,11 +150,26 @@ export default class App extends React.Component {
     }, 500);
   }
   destroySeekerListener() {
-    console.log("destroySeekerListener");
     this.seeker ? clearInterval(this.seeker) : null;
+  }
+  handleConnectionChange(connection) {
+    if (connection.type === "none" || connection.type === "unknown") {
+      this.setState({
+        internet: false
+      });
+      TrackPlayer ? TrackPlayer.stop() : null;
+    } else {
+      this.setState({
+        internet: true
+      });
+    }
   }
   componentDidMount() {
     this.createSeekerListener();
+    NetInfo.addEventListener(
+      "connectionChange",
+      this.handleConnectionChange.bind(this)
+    );
     this.refs.seeker._component.scrollTo({
       x: width - 20,
       animated: false
@@ -164,6 +179,7 @@ export default class App extends React.Component {
     this.destroySeekerListener();
   }
   componentWillMount() {
+    // Play this to start with
     TrackPlayer.setupPlayer().then(async () => {
       await TrackPlayer.add({
         id: "trackX",
@@ -177,7 +193,6 @@ export default class App extends React.Component {
     });
     TrackPlayer.registerEventHandler(async data => {
       let dat = await data;
-      console.log(dat);
       if (dat.type === "playback-queue-ended") {
         TrackPlayer.seekTo(0);
       }
@@ -208,7 +223,6 @@ export default class App extends React.Component {
     let min = Math.floor(this.state.currentPosition / 60);
     sec < 10 ? (sec = "0" + sec) : (sec = sec);
     min < 10 ? (min = "0" + min) : (min = min);
-    // console.log(min + ":" + sec);
     return (
       <View style={{ flex: 1 }}>
         <StatusBar barStyle="light-content" />
@@ -328,6 +342,7 @@ export default class App extends React.Component {
                 }}
               >
                 <TouchableOpacity
+                  disabled={!this.state.internet}
                   style={{
                     height: 40,
                     width: 40,
@@ -362,6 +377,7 @@ export default class App extends React.Component {
                 height: 16 * height / 112.5,
                 width: (width - 10) * 2
               }}
+              scrollEnabled={this.state.internet}
               onScrollBeginDrag={e => {
                 this.destroySeekerListener();
               }}
@@ -401,7 +417,10 @@ export default class App extends React.Component {
               data={this.state.songs}
               renderItem={({ item }) => {
                 return (
-                  <TouchableOpacity onPress={() => this.setNewTrack(item)}>
+                  <TouchableOpacity
+                    disabled={!this.state.internet}
+                    onPress={() => this.setNewTrack(item)}
+                  >
                     <View
                       style={{
                         height: height * 7 / 60,
@@ -492,6 +511,19 @@ export default class App extends React.Component {
               </TouchableOpacity>
             </View>
           </View>
+        </View>
+        <View
+          style={{
+            position: "absolute",
+            justifyContent: "center",
+            alignItems: "center",
+            width: width,
+            height: 100,
+            backgroundColor: "yellow",
+            top: this.state.internet ? height : height - 150
+          }}
+        >
+          <Text>No internet</Text>
         </View>
       </View>
     );
