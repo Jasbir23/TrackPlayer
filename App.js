@@ -7,6 +7,7 @@
 import React, { Component } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import AudioPlayer from "./src/AudioPlayer";
+import EnhancedAudioPlayer from "./src/EnhancedAudioPlayer";
 
 // import TrackPlayer from "react-native-track-player";
 //
@@ -34,7 +35,7 @@ const instructions = Platform.select({
 
 export default class App extends Component<{}> {
   render() {
-    return <AudioPlayer />;
+    return <EnhancedAudioPlayer />;
   }
 }
 
