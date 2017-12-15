@@ -9,13 +9,16 @@ import {
   PanResponder,
   NetInfo,
   Platform,
-  Animated
+  Animated,
+  Alert,
+  TouchableWithoutFeedback
 } from "react-native";
 import { Icon, Thumbnail, Spinner } from "native-base";
 import TrackPlayer from "react-native-track-player";
 import RNFS from "react-native-fs";
 
 const { height, width } = Dimensions.get("window");
+let timer = 0;
 
 export default class App extends React.Component {
   constructor(props) {
@@ -71,53 +74,68 @@ export default class App extends React.Component {
           id: 2
         },
         {
-          name: "Popeye",
-          url:
-            "https://ia800501.us.archive.org/11/items/popeye_i_dont_scare/popeye_i_dont_scare_512kb.mp4",
-          id: 3
-        },
-        {
           name: "PodingBear",
           url:
             "https://s3.amazonaws.com/exp-us-standard/audio/playlist-example/Podington_Bear_-_Rubber_Robot.mp3",
-          id: 4
+          id: 3
         }
       ],
       currentPosition: 0,
       isPlaying: false,
       currentTrack: "AllOfMe",
-      internet: true
+      internet: true,
+      isLocal: false
     };
   }
   async setNewTrack(track) {
     let downPath = undefined;
     RNFS.exists(
       RNFS.DocumentDirectoryPath + "/" + track.name + ".mp3"
-    ).then(result => {
+    ).then(async result => {
       if (result === false) {
         // file not found, download it
+        this.setState({
+          isLocal: false
+        });
         let url = track.url;
         let path = RNFS.DocumentDirectoryPath + "/" + track.name + ".mp3";
-        RNFS.downloadFile({
-          fromUrl: url,
-          toFile: path
-        }).promise.then(res => {});
+        if (this.state.internet) {
+          RNFS.downloadFile({
+            fromUrl: url,
+            toFile: path
+          }).promise.then(res => {});
+          TrackPlayer.add({
+            id: "track" + track.id,
+            url: track.url,
+            title: track.name,
+            artist: "Track Artist"
+          }).then(async () => {
+            await TrackPlayer.skipToNext();
+            TrackPlayer.play();
+          });
+        } else if (!this.state.internet) {
+          Alert.alert("Error", "Cannot play network files w/o internet");
+        }
       } else {
         // file found, use local path
+        this.setState({
+          isLocal: true
+        });
         downPath =
           "file://" + RNFS.DocumentDirectoryPath + "/" + track.name + ".mp3";
+        this.setState({
+          currentTrack: track.name
+        });
+        TrackPlayer.add({
+          id: "track" + track.id,
+          url: downPath ? downPath : track.url,
+          title: track.name,
+          artist: "Track Artist"
+        }).then(async () => {
+          await TrackPlayer.skipToNext();
+          TrackPlayer.play();
+        });
       }
-    });
-    await TrackPlayer.add({
-      id: "track" + track.id,
-      url: downPath ? downPath : track.url,
-      title: track.name,
-      artist: "Track Artist"
-    }).then(async () => {
-      await TrackPlayer.skipToNext();
-      this.setState({
-        currentTrack: track.name
-      });
     });
   }
   renderPlayButton() {
@@ -137,30 +155,38 @@ export default class App extends React.Component {
     );
   }
   createSeekerListener() {
-    this.seeker = setInterval(async () => {
+    timer = 0;
+    this.setState({
+      loading: false
+    });
+    timer = setInterval(async () => {
       let pos =
         (await TrackPlayer.getPosition()) / (await TrackPlayer.getDuration());
       this.refs.seeker._component.scrollTo({
-        x: pos ? width - 20 - pos * (width - 20) : width - 20
+        x: pos ? width - 20 - pos * (width - 20) : width - 20,
+        animated: false
       });
       this.setState({
         currentPosition: pos ? pos * width : 0,
         currentSec: await TrackPlayer.getPosition()
       });
-    }, 500);
+    }, 1100);
   }
   destroySeekerListener() {
-    this.seeker ? clearInterval(this.seeker) : null;
+    this.setState({
+      loading: true
+    });
+    clearInterval(timer);
   }
   handleConnectionChange(connection) {
     if (connection.type === "none" || connection.type === "unknown") {
       this.setState({
         internet: false
       });
-      TrackPlayer ? TrackPlayer.stop() : null;
     } else {
       this.setState({
-        internet: true
+        internet: true,
+        loading: false
       });
     }
   }
@@ -193,6 +219,25 @@ export default class App extends React.Component {
     });
     TrackPlayer.registerEventHandler(async data => {
       let dat = await data;
+      if (
+        dat.type === "playback-error" &&
+        dat.error ===
+          "The operation couldn’t be completed. (RNTrackPlayer.AudioPlayerError error 0.)"
+      ) {
+        RNFS.unlink(
+          "file://" +
+            RNFS.DocumentDirectoryPath +
+            "/" +
+            this.state.currentTrack +
+            ".mp3"
+        ).then(() => {
+          Object.keys(this.state.songs).map((item, index) => {
+            if (this.state.currentTrack === this.state.songs[item].name) {
+              this.setNewTrack(this.state.songs[item]);
+            }
+          });
+        });
+      }
       if (dat.type === "playback-queue-ended") {
         TrackPlayer.seekTo(0);
       }
@@ -342,7 +387,6 @@ export default class App extends React.Component {
                 }}
               >
                 <TouchableOpacity
-                  disabled={!this.state.internet}
                   style={{
                     height: 40,
                     width: 40,
@@ -351,12 +395,17 @@ export default class App extends React.Component {
                     alignItems: "center"
                   }}
                   onPress={() => {
-                    this.state.isPlaying
-                      ? TrackPlayer.pause()
-                      : TrackPlayer.play();
-                    this.setState({
-                      isPlaying: !this.state.isPlaying
-                    });
+                    if (this.state.internet || this.state.isLocal) {
+                      this.state.isPlaying
+                        ? TrackPlayer.pause()
+                        : TrackPlayer.play();
+                      this.setState({
+                        isPlaying: !this.state.isPlaying
+                      });
+                    } else {
+                      TrackPlayer.pause();
+                      Alert.alert("No internet found");
+                    }
                   }}
                 >
                   {this.renderPlayButton()}
@@ -369,6 +418,7 @@ export default class App extends React.Component {
                 top: 0,
                 left: 0
               }}
+              decelerationRate={"fast"}
               bounces={false}
               showsVerticalScrollIndicator={false}
               showsHorizontalScrollIndicator={false}
@@ -377,27 +427,54 @@ export default class App extends React.Component {
                 height: 16 * height / 112.5,
                 width: (width - 10) * 2
               }}
-              scrollEnabled={this.state.internet}
               onScrollBeginDrag={e => {
                 this.destroySeekerListener();
               }}
               onScrollEndDrag={async e => {
-                let pos = width - 20 - e.nativeEvent.contentOffset.x;
-                let sec =
-                  pos / (width - 20) * (await TrackPlayer.getDuration());
-                await TrackPlayer.seekTo(sec);
-                this.createSeekerListener();
+                if (this.state.internet || this.state.isLocal) {
+                  let pos = width - 20 - e.nativeEvent.contentOffset.x;
+                  let sec =
+                    pos / (width - 20) * (await TrackPlayer.getDuration());
+                  await TrackPlayer.seekTo(sec);
+                  this.refs.seeker._component.scrollTo({
+                    x: pos ? width - 20 - pos : width - 20,
+                    animated: false
+                  });
+                  this.createSeekerListener();
+                } else {
+                  this.createSeekerListener();
+                  Alert.alert("No internet found");
+                  TrackPlayer.pause();
+                  this.setState({
+                    loading: true
+                  });
+                }
               }}
             >
-              <View
+              <TouchableOpacity
                 style={{
-                  height: 40,
-                  width: 4,
-                  top: 10,
-                  left: width - 10,
-                  backgroundColor: "green"
+                  height: 16 * height / 112.5,
+                  width: (width - 10) * 2
                 }}
-              />
+                activeOpacity={1}
+                onPress={async e => {
+                  let diff = e.nativeEvent.pageX;
+                  let pos = diff;
+                  let sec =
+                    pos / (width - 20) * (await TrackPlayer.getDuration());
+                  TrackPlayer.seekTo(sec);
+                }}
+              >
+                <View
+                  style={{
+                    height: 40,
+                    width: 4,
+                    top: 10,
+                    left: width - 10,
+                    backgroundColor: "green"
+                  }}
+                />
+              </TouchableOpacity>
             </Animated.ScrollView>
           </View>
           <View
@@ -417,10 +494,7 @@ export default class App extends React.Component {
               data={this.state.songs}
               renderItem={({ item }) => {
                 return (
-                  <TouchableOpacity
-                    disabled={!this.state.internet}
-                    onPress={() => this.setNewTrack(item)}
-                  >
+                  <TouchableOpacity onPress={() => this.setNewTrack(item)}>
                     <View
                       style={{
                         height: height * 7 / 60,
@@ -509,21 +583,15 @@ export default class App extends React.Component {
               <TouchableOpacity style={{ marginHorizontal: 20 }}>
                 <Icon name="quote" active style={{ color: "white" }} />
               </TouchableOpacity>
+              <TouchableOpacity style={{ marginHorizontal: 20 }}>
+                <Icon
+                  name="wifi"
+                  active
+                  style={{ color: this.state.internet ? "white" : "red" }}
+                />
+              </TouchableOpacity>
             </View>
           </View>
-        </View>
-        <View
-          style={{
-            position: "absolute",
-            justifyContent: "center",
-            alignItems: "center",
-            width: width,
-            height: 100,
-            backgroundColor: "yellow",
-            top: this.state.internet ? height : height - 150
-          }}
-        >
-          <Text>No internet</Text>
         </View>
       </View>
     );
