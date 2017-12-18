@@ -7,6 +7,7 @@
 import React, { Component } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import EnhancedAudioPlayer from "./src/EnhancedAudioPlayer";
+import Seeker from "./src/Seeker";
 
 // import TrackPlayer from "react-native-track-player";
 //

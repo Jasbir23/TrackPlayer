@@ -16,6 +16,8 @@ import {
 import { Icon, Thumbnail, Spinner } from "native-base";
 import TrackPlayer from "react-native-track-player";
 import RNFS from "react-native-fs";
+import Seeker from "./Seeker";
+import AudioPlayerStyles from "./audioPlayerStyles.js";
 
 const { height, width } = Dimensions.get("window");
 let timer = 0;
@@ -24,41 +26,6 @@ export default class App extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
-      lineArray: [
-        12,
-        18,
-        19,
-        20,
-        22,
-        23,
-        17,
-        14,
-        15,
-        17,
-        21,
-        24,
-        26,
-        28,
-        20,
-        21,
-        23,
-        25,
-        27,
-        29,
-        22,
-        21,
-        20,
-        22,
-        24,
-        16,
-        18,
-        20,
-        19,
-        16,
-        18,
-        15,
-        19
-      ],
       loading: false,
       songs: [
         {
@@ -68,9 +35,9 @@ export default class App extends React.Component {
           id: 0
         },
         {
-          name: "AllOfMe",
+          name: "Diljit",
           url:
-            "https://ia800304.us.archive.org/34/items/PaulWhitemanwithMildredBailey/PaulWhitemanwithMildredBailey-AllofMe.mp3",
+            "https://downpwnew.com/upload_file/5570/5738/Latest%20Punjabi%20Mp3%20Songs%202017/El%20Sueno%20-%20Diljit%20Dosanjh%20-%20Mp3%20Song/El%20Sueno%20-%20Diljit%20Dosanjh%20190Kbps.mp3",
           id: 2
         },
         {
@@ -82,7 +49,7 @@ export default class App extends React.Component {
       ],
       currentPosition: 0,
       isPlaying: false,
-      currentTrack: "AllOfMe",
+      currentTrack: "Sorry",
       internet: true,
       isLocal: false
     };
@@ -104,6 +71,9 @@ export default class App extends React.Component {
             fromUrl: url,
             toFile: path
           }).promise.then(res => {});
+          this.setState({
+            currentTrack: track.name
+          });
           TrackPlayer.add({
             id: "track" + track.id,
             url: track.url,
@@ -155,21 +125,18 @@ export default class App extends React.Component {
     );
   }
   createSeekerListener() {
-    timer = 0;
     this.setState({
       loading: false
     });
     timer = setInterval(async () => {
       let pos =
         (await TrackPlayer.getPosition()) / (await TrackPlayer.getDuration());
-      this.refs.seeker._component.scrollTo({
-        x: pos ? width - 20 - pos * (width - 20) : width - 20,
-        animated: false
-      });
+      let sec = await TrackPlayer.getPosition();
       this.setState({
         currentPosition: pos ? pos * width : 0,
-        currentSec: await TrackPlayer.getPosition()
+        currentSec: sec ? sec : 0
       });
+      Seeker.updatePosition(pos ? width - 20 - pos * (width - 20) : width - 20);
     }, 1100);
   }
   destroySeekerListener() {
@@ -196,10 +163,6 @@ export default class App extends React.Component {
       "connectionChange",
       this.handleConnectionChange.bind(this)
     );
-    this.refs.seeker._component.scrollTo({
-      x: width - 20,
-      animated: false
-    });
   }
   componentWillUnmount() {
     this.destroySeekerListener();
@@ -210,15 +173,15 @@ export default class App extends React.Component {
       await TrackPlayer.add({
         id: "trackX",
         url:
-          "https://ia800304.us.archive.org/34/items/PaulWhitemanwithMildredBailey/PaulWhitemanwithMildredBailey-AllofMe.mp3",
+          "https://s3.amazonaws.com/exp-us-standard/audio/playlist-example/Comfort_Fit_-_03_-_Sorry.mp3",
         title: "sorrymp3",
         artist: "Jazzy"
-      }).then(async () => {
-        await TrackPlayer.play();
       });
+      TrackPlayer.play();
     });
     TrackPlayer.registerEventHandler(async data => {
       let dat = await data;
+      console.log(dat);
       if (
         dat.type === "playback-error" &&
         dat.error ===
@@ -271,21 +234,8 @@ export default class App extends React.Component {
     return (
       <View style={{ flex: 1 }}>
         <StatusBar barStyle="light-content" />
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "rgb(39, 83, 94)",
-            flexDirection: "row"
-          }}
-        >
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "flex-start",
-              alignItems: "center",
-              flexDirection: "row"
-            }}
-          >
+        <View style={AudioPlayerStyles.container}>
+          <View style={AudioPlayerStyles.header}>
             <TouchableOpacity style={{ marginLeft: 15 }}>
               <Icon
                 name="arrow-back"
@@ -300,9 +250,7 @@ export default class App extends React.Component {
               alignItems: "center"
             }}
           >
-            <Text style={{ color: "white", fontWeight: "bold" }}>
-              Les girls
-            </Text>
+            <Text style={AudioPlayerStyles.headerText}>Les girls</Text>
           </View>
           <View
             style={{
@@ -318,14 +266,7 @@ export default class App extends React.Component {
           </View>
         </View>
         <View style={{ flex: 8, backgroundColor: "rgb(39, 83, 94)" }}>
-          <View
-            style={{
-              flex: 0.5,
-              flexDirection: "row",
-              justifyContent: "flex-start",
-              alignItems: "center"
-            }}
-          >
+          <View style={AudioPlayerStyles.slab1}>
             <Text style={{ color: "white", marginLeft: 25 }}>
               {this.state.currentTrack}
             </Text>
@@ -345,147 +286,49 @@ export default class App extends React.Component {
             </TouchableOpacity>
           </View>
           <View style={{ flex: 2 }}>
-            <View
-              style={{
-                flex: 1.5,
-                flexDirection: "row",
-                justifyContent: "center",
-                alignItems: "center"
+            <Seeker
+              touchSeek={async pos => {
+                let diff = width - 20 - pos;
+                let sec =
+                  (width - 20 - pos) /
+                  (width - 20) *
+                  (await TrackPlayer.getDuration());
+                TrackPlayer.seekTo(sec);
               }}
-            >
-              {this.state.lineArray.map((item, index) => {
-                return (
-                  <View
-                    key={index}
-                    style={{
-                      height: item,
-                      marginHorizontal: 3,
-                      width: 2,
-                      backgroundColor: "white"
-                    }}
-                  />
-                );
-              })}
-            </View>
-            <View
-              style={{
-                flex: 1,
-                justifyContent: "flex-start",
-                alignItems: "center"
-              }}
-            >
-              <View
-                style={{
-                  height: 40,
-                  width: 40,
-                  borderRadius: 20,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  borderWidth: 1.5,
-                  borderColor: "white",
-                  backgroundColor: "rgba(255,255,255,0.2)"
-                }}
-              >
-                <TouchableOpacity
-                  style={{
-                    height: 40,
-                    width: 40,
-                    borderRadius: 20,
-                    justifyContent: "center",
-                    alignItems: "center"
-                  }}
-                  onPress={() => {
-                    if (this.state.internet || this.state.isLocal) {
-                      this.state.isPlaying
-                        ? TrackPlayer.pause()
-                        : TrackPlayer.play();
-                      this.setState({
-                        isPlaying: !this.state.isPlaying
-                      });
-                    } else {
-                      TrackPlayer.pause();
-                      Alert.alert("No internet found");
-                    }
-                  }}
-                >
-                  {this.renderPlayButton()}
-                </TouchableOpacity>
-              </View>
-            </View>
-            <Animated.ScrollView
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0
-              }}
-              decelerationRate={"fast"}
-              bounces={false}
-              showsVerticalScrollIndicator={false}
-              showsHorizontalScrollIndicator={false}
-              ref="seeker"
-              contentContainerStyle={{
-                height: 16 * height / 112.5,
-                width: (width - 10) * 2
-              }}
-              onScrollBeginDrag={e => {
+              beginDrag={pos => {
                 this.destroySeekerListener();
               }}
-              onScrollEndDrag={async e => {
+              endDrag={async pos => {
+                console.log("Drag end", width - 20 - pos);
+                let diff = width - 20 - pos;
+                let sec =
+                  (width - 20 - pos) /
+                  (width - 20) *
+                  (await TrackPlayer.getDuration());
+                TrackPlayer.seekTo(sec);
+                this.createSeekerListener();
+              }}
+            />
+            <TouchableOpacity
+              style={AudioPlayerStyles.playButton}
+              onPress={() => {
                 if (this.state.internet || this.state.isLocal) {
-                  let pos = width - 20 - e.nativeEvent.contentOffset.x;
-                  let sec =
-                    pos / (width - 20) * (await TrackPlayer.getDuration());
-                  await TrackPlayer.seekTo(sec);
-                  this.refs.seeker._component.scrollTo({
-                    x: pos ? width - 20 - pos : width - 20,
-                    animated: false
-                  });
-                  this.createSeekerListener();
-                } else {
-                  this.createSeekerListener();
-                  Alert.alert("No internet found");
-                  TrackPlayer.pause();
+                  this.state.isPlaying
+                    ? TrackPlayer.pause()
+                    : TrackPlayer.play();
                   this.setState({
-                    loading: true
+                    isPlaying: !this.state.isPlaying
                   });
+                } else {
+                  TrackPlayer.pause();
+                  Alert.alert("No internet found");
                 }
               }}
             >
-              <TouchableOpacity
-                style={{
-                  height: 16 * height / 112.5,
-                  width: (width - 10) * 2
-                }}
-                activeOpacity={1}
-                onPress={async e => {
-                  let diff = e.nativeEvent.pageX;
-                  let pos = diff;
-                  let sec =
-                    pos / (width - 20) * (await TrackPlayer.getDuration());
-                  TrackPlayer.seekTo(sec);
-                }}
-              >
-                <View
-                  style={{
-                    height: 40,
-                    width: 4,
-                    top: 10,
-                    left: width - 10,
-                    backgroundColor: "green"
-                  }}
-                />
-              </TouchableOpacity>
-            </Animated.ScrollView>
+              {this.renderPlayButton()}
+            </TouchableOpacity>
           </View>
-          <View
-            style={{
-              flex: 0.5,
-              justifyContent: "flex-start",
-              alignItems: "center",
-              flexDirection: "row",
-              paddingLeft: 15
-            }}
-          >
+          <View style={AudioPlayerStyles.totalSongs}>
             <Text style={{ color: "white" }}>Total Songs : 30</Text>
           </View>
           <View style={{ flex: 3 }}>
@@ -495,14 +338,7 @@ export default class App extends React.Component {
               renderItem={({ item }) => {
                 return (
                   <TouchableOpacity onPress={() => this.setNewTrack(item)}>
-                    <View
-                      style={{
-                        height: height * 7 / 60,
-                        width: width,
-                        flexDirection: "row",
-                        justifyContent: "flex-start"
-                      }}
-                    >
+                    <View style={AudioPlayerStyles.songItem}>
                       <View
                         style={{
                           flex: 1,
@@ -555,35 +391,20 @@ export default class App extends React.Component {
               justifyContent: "flex-start"
             }}
           >
-            <Text
-              style={{
-                color: "white",
-                fontSize: 12,
-                marginTop: 10,
-                marginLeft: 15
-              }}
-            >
+            <Text style={AudioPlayerStyles.footerText}>
               Reception des messages vocaux via:
             </Text>
-            <View
-              style={{
-                flex: 1,
-                justifyContent: "flex-start",
-                alignItems: "flex-start",
-                flexDirection: "row",
-                paddingTop: 15
-              }}
-            >
-              <TouchableOpacity style={{ marginHorizontal: 20 }}>
+            <View style={AudioPlayerStyles.footer}>
+              <TouchableOpacity style={AudioPlayerStyles.footerButton}>
                 <Icon name="mail" style={{ color: "white" }} />
               </TouchableOpacity>
-              <TouchableOpacity style={{ marginHorizontal: 20 }}>
+              <TouchableOpacity style={AudioPlayerStyles.footerButton}>
                 <Icon name="chatboxes" active style={{ color: "white" }} />
               </TouchableOpacity>
-              <TouchableOpacity style={{ marginHorizontal: 20 }}>
+              <TouchableOpacity style={AudioPlayerStyles.footerButton}>
                 <Icon name="quote" active style={{ color: "white" }} />
               </TouchableOpacity>
-              <TouchableOpacity style={{ marginHorizontal: 20 }}>
+              <TouchableOpacity style={AudioPlayerStyles.footerButton}>
                 <Icon
                   name="wifi"
                   active
