@@ -75,6 +75,7 @@ export default class Seeker extends React.Component {
             width: width,
             height: 16 * height / 112.5
           }}
+          scrollEnabled={this.props.enabled}
           decelerationRate={"fast"}
           horizontal={true}
           showsVerticalScrollIndicator={false}
@@ -94,6 +95,7 @@ export default class Seeker extends React.Component {
           }}
         >
           <TouchableOpacity
+            disabled={!this.props.enabled}
             style={{
               height: 16 * height / 112.5,
               width: (width - 10) * 2

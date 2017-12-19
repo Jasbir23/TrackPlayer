@@ -287,6 +287,7 @@ export default class App extends React.Component {
           </View>
           <View style={{ flex: 2 }}>
             <Seeker
+              enabled={this.state.internet || this.state.isLocal}
               touchSeek={async pos => {
                 let diff = width - 20 - pos;
                 let sec =
