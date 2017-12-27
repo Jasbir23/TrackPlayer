@@ -125,6 +125,7 @@ export default class App extends React.Component {
     );
   }
   createSeekerListener() {
+    console.log("createSeekerListener");
     this.setState({
       loading: false
     });
@@ -205,19 +206,19 @@ export default class App extends React.Component {
         TrackPlayer.seekTo(0);
       }
       if (dat.type === "playback-state") {
-        if (dat.state === "STATE_BUFFERING") {
+        if (dat.state === "STATE_BUFFERING" || dat.state === 6) {
           this.setState({
             loading: true,
             isPlaying: false
           });
         }
-        if (dat.state === "STATE_PLAYING") {
+        if (dat.state === "STATE_PLAYING" || dat.state === 3) {
           this.setState({
             loading: false,
             isPlaying: true
           });
         }
-        if (dat.state === "STATE_PAUSED") {
+        if (dat.state === "STATE_PAUSED" || dat.state === 2) {
           this.setState({
             loading: false,
             isPlaying: false
