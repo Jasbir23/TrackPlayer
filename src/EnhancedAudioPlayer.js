@@ -12,7 +12,8 @@ import {
   Animated,
   Alert,
   TouchableWithoutFeedback,
-  DeviceEventEmitter
+  DeviceEventEmitter,
+  AppState
 } from "react-native";
 import { Icon, Thumbnail, Spinner } from "native-base";
 import TrackPlayer from "react-native-track-player";
@@ -57,6 +58,7 @@ export default class App extends React.Component {
       isLocal: false,
       proximity: false,
       currentSec: 0,
+      appState: AppState.currentState,
     };
     this._onChangeAudioOutput = this._onChangeAudioOutput.bind(this);
     this._proximityListener = this._proximityListener.bind(this);
@@ -138,7 +140,6 @@ export default class App extends React.Component {
 
 
   createSeekerListener() {
-    console.log("createSeekerListener");
     this.setState({
       loading: false
     });
@@ -179,6 +180,7 @@ export default class App extends React.Component {
 
   componentDidMount() {
     this.createSeekerListener();
+    AppState.addEventListener('change', this._handleAppStateChange);
     NetInfo.addEventListener(
       "connectionChange",
       this.handleConnectionChange.bind(this)
@@ -188,7 +190,9 @@ export default class App extends React.Component {
 
 
   componentWillUnmount() {
+    // TrackPlayer.setupPlayer(false);
     this.destroySeekerListener();
+    AppState.removeEventListener('change', this._handleAppStateChange);
   }
 
 
@@ -206,7 +210,6 @@ export default class App extends React.Component {
     });
     TrackPlayer.registerEventHandler(async data => {
       let dat = await data;
-      console.log(dat);
       if (
         dat.type === "playback-error" &&
         dat.error ===
@@ -252,8 +255,17 @@ export default class App extends React.Component {
     });
   }
 
+  _handleAppStateChange = (nextAppState) => {
+    if (this.state.appState.match(/inactive|background/) && nextAppState === 'active') {
+      Proximity.addListener(this._proximityListener);
+    } else if (nextAppState === 'background'){
+      Proximity.removeListener(this._proximityListener);
+    }
+    this.setState({ appState: nextAppState });
+  }
+
+
   _onChangeAudioOutput() {
-    console.log("cehck", this.state.currentSec, this.state.proximity);
     if(this.state.proximity) {
       TrackPlayer.pause();
       TrackPlayer.playWithEarPiece();
@@ -261,18 +273,17 @@ export default class App extends React.Component {
       TrackPlayer.pause();
       TrackPlayer.play();
     }
-    // this.setState({ speaker: !this.state.speaker });
     TrackPlayer.seekTo(this.state.currentSec);
-    // this.createSeekerListener();
   }
 
   _proximityListener(data) {
-    this.setState({ proximity: data.proximity})
-    this._onChangeAudioOutput();
+    if(data) {
+      this.setState({ proximity: data.proximity})
+      this._onChangeAudioOutput();
+    }
   }
 
   render() {
-    console.log(TrackPlayer, "Player Object")
     let sec = Math.floor(this.state.currentPosition % 60);
     let min = Math.floor(this.state.currentPosition / 60);
     sec < 10 ? (sec = "0" + sec) : (sec = sec);
@@ -346,13 +357,11 @@ export default class App extends React.Component {
                 this.destroySeekerListener();
               }}
               endDrag={async pos => {
-                console.log("Drag end", width - 20 - pos);
                 let diff = width - 20 - pos;
                 let sec =
                   (width - 20 - pos) /
                   (width - 20) *
                   (await TrackPlayer.getDuration());
-                console.log(sec, "asdsad")
                 TrackPlayer.seekTo(sec);
                 this.createSeekerListener();
               }}

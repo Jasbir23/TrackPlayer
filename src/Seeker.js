@@ -16,7 +16,6 @@ export default class Seeker extends React.Component {
     this.state = {
       lineArray: []
     };
-    console.log("iuhkjh");
   }
   componentDidMount() {
     seeker = this.refs.seeker._component;
@@ -37,7 +36,7 @@ export default class Seeker extends React.Component {
     });
   }
   static updatePosition(pos) {
-    // console.log(pos, seeker);
+    if(isFinite(pos))
     seeker.scrollTo({
       x: pos,
       animated: false
