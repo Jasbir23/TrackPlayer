@@ -255,8 +255,10 @@ export default class App extends React.Component {
   _onChangeAudioOutput() {
     console.log("cehck", this.state.currentSec, this.state.proximity);
     if(this.state.proximity) {
+      TrackPlayer.pause();
       TrackPlayer.playWithEarPiece();
     } else {
+      TrackPlayer.pause();
       TrackPlayer.play();
     }
     // this.setState({ speaker: !this.state.speaker });
