@@ -147,12 +147,18 @@ export default class App extends React.Component {
       let pos =
         (await TrackPlayer.getPosition()) / (await TrackPlayer.getDuration());
       let sec = await TrackPlayer.getPosition();
+
+      // Handled Seeker Position on Track Change
+      if(!isFinite(pos)){
+        pos = 0;
+      }
+
       this.setState({
         currentPosition: pos ? pos * width : 0,
         currentSec: sec ? sec : 0
       });
       Seeker.updatePosition(pos ? width - 20 - pos * (width - 20) : width - 20);
-    }, 1100);
+    }, 1000);
   }
 
 
@@ -266,6 +272,7 @@ export default class App extends React.Component {
 
 
   _onChangeAudioOutput() {
+    this.setState({ currentPosition: this.state.currentSec})
     if(this.state.proximity) {
       TrackPlayer.pause();
       TrackPlayer.playWithEarPiece();
@@ -284,8 +291,8 @@ export default class App extends React.Component {
   }
 
   render() {
-    let sec = Math.floor(this.state.currentPosition % 60);
-    let min = Math.floor(this.state.currentPosition / 60);
+    let sec = Math.floor(this.state.currentSec % 60);
+    let min = Math.floor(this.state.currentSec / 60);
     sec < 10 ? (sec = "0" + sec) : (sec = sec);
     min < 10 ? (min = "0" + min) : (min = min);
     return (
