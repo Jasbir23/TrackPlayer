@@ -59,6 +59,7 @@ export default class App extends React.Component {
       proximity: false,
       currentSec: 0,
       appState: AppState.currentState,
+      headset: false,
     };
     this._onChangeAudioOutput = this._onChangeAudioOutput.bind(this);
     this._proximityListener = this._proximityListener.bind(this);
@@ -196,7 +197,7 @@ export default class App extends React.Component {
 
 
   componentWillUnmount() {
-    // TrackPlayer.setupPlayer(false);
+    // TrackPlayer.stop();
     this.destroySeekerListener();
     AppState.removeEventListener('change', this._handleAppStateChange);
   }
@@ -238,6 +239,14 @@ export default class App extends React.Component {
       if (dat.type === "playback-queue-ended") {
         TrackPlayer.seekTo(0);
       }
+      if (dat.type === "headset-plugged-in") {
+        this.setState({ headset: true });
+        Proximity.removeListener(this._proximityListener);
+      }
+      if (dat.type === "headset-plugged-out") {
+        this.setState({ headset: false });
+        Proximity.addListener(this._proximityListener);
+      }
       if (dat.type === "playback-state") {
         if (dat.state === "STATE_BUFFERING" || dat.state === 6) {
           this.setState({
@@ -262,7 +271,7 @@ export default class App extends React.Component {
   }
 
   _handleAppStateChange = (nextAppState) => {
-    if (this.state.appState.match(/inactive|background/) && nextAppState === 'active') {
+    if (this.state.appState.match(/inactive|background/) && nextAppState === 'active' && !this.state.headset) {
       Proximity.addListener(this._proximityListener);
     } else if (nextAppState === 'background'){
       Proximity.removeListener(this._proximityListener);
