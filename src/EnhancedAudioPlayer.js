@@ -217,6 +217,7 @@ export default class App extends React.Component {
     });
     TrackPlayer.registerEventHandler(async data => {
       let dat = await data;
+      console.log(dat, "!!!!")
       if (
         dat.type === "playback-error" &&
         dat.error ===
@@ -241,10 +242,12 @@ export default class App extends React.Component {
       }
       if (dat.type === "headset-plugged-in") {
         this.setState({ headset: true });
+        alert("In");
         Proximity.removeListener(this._proximityListener);
       }
       if (dat.type === "headset-plugged-out") {
         this.setState({ headset: false });
+        alert("Out");
         Proximity.addListener(this._proximityListener);
       }
       if (dat.type === "playback-state") {
