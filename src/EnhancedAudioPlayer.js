@@ -25,6 +25,9 @@ import Proximity from 'react-native-proximity';
 
 const { height, width } = Dimensions.get("window");
 let timer = 0;
+const LOUDSPEAKER = 'loudspeaker';
+const EARPIECE_SPEAKER = 'earpiece_speaker';
+const HEADSET = 'headset';
 
 export default class App extends React.Component {
   constructor(props) {
@@ -59,10 +62,11 @@ export default class App extends React.Component {
       proximity: false,
       currentSec: 0,
       appState: AppState.currentState,
-      headset: false,
+      audioOuput: LOUDSPEAKER,
     };
     this._onChangeAudioOutput = this._onChangeAudioOutput.bind(this);
     this._proximityListener = this._proximityListener.bind(this);
+    this._onVolumeIconPressed = this._onVolumeIconPressed.bind(this);
   }
 
 
@@ -217,7 +221,6 @@ export default class App extends React.Component {
     });
     TrackPlayer.registerEventHandler(async data => {
       let dat = await data;
-      console.log(dat, "!!!!")
       if (
         dat.type === "playback-error" &&
         dat.error ===
@@ -241,13 +244,12 @@ export default class App extends React.Component {
         TrackPlayer.seekTo(0);
       }
       if (dat.type === "headset-plugged-in") {
-        this.setState({ headset: true });
-        alert("In");
+        if(Platform.OS != "ios") TrackPlayer.play();
+        this.setState({ audioOuput: HEADSET });
         Proximity.removeListener(this._proximityListener);
       }
       if (dat.type === "headset-plugged-out") {
-        this.setState({ headset: false });
-        alert("Out");
+        this.setState({ audioOuput: LOUDSPEAKER });
         Proximity.addListener(this._proximityListener);
       }
       if (dat.type === "playback-state") {
@@ -274,7 +276,7 @@ export default class App extends React.Component {
   }
 
   _handleAppStateChange = (nextAppState) => {
-    if (this.state.appState.match(/inactive|background/) && nextAppState === 'active' && !this.state.headset) {
+    if (this.state.appState.match(/inactive|background/) && nextAppState === 'active' && !(this.state.audioOuput == HEADSET)) {
       Proximity.addListener(this._proximityListener);
     } else if (nextAppState === 'background'){
       Proximity.removeListener(this._proximityListener);
@@ -285,20 +287,38 @@ export default class App extends React.Component {
 
   _onChangeAudioOutput() {
     this.setState({ currentPosition: this.state.currentSec})
-    if(this.state.proximity) {
+    if(this.state.proximity && this.state.audioOuput != EARPIECE_SPEAKER ) {
       TrackPlayer.pause();
       TrackPlayer.playWithEarPiece();
-    } else {
+      this.setState({ audioOuput: EARPIECE_SPEAKER })
+      TrackPlayer.seekTo(this.state.currentSec);
+    } else if(!this.state.proximity && this.state.audioOuput != LOUDSPEAKER){
       TrackPlayer.pause();
       TrackPlayer.play();
+      this.setState({ audioOuput: LOUDSPEAKER })
+      TrackPlayer.seekTo(this.state.currentSec);
     }
-    TrackPlayer.seekTo(this.state.currentSec);
   }
 
   _proximityListener(data) {
     if(data) {
       this.setState({ proximity: data.proximity})
       this._onChangeAudioOutput();
+    }
+  }
+
+  _onVolumeIconPressed() {
+    this.setState({ currentPosition: this.state.currentSec})
+    if(this.state.audioOuput == LOUDSPEAKER) {
+      TrackPlayer.pause();
+      TrackPlayer.playWithEarPiece();
+      this.setState({ audioOuput: EARPIECE_SPEAKER })
+      TrackPlayer.seekTo(this.state.currentSec);
+    } else {
+      TrackPlayer.pause();
+      TrackPlayer.play();
+      this.setState({ audioOuput: LOUDSPEAKER })
+      TrackPlayer.seekTo(this.state.currentSec);
     }
   }
 
@@ -349,9 +369,9 @@ export default class App extends React.Component {
             <Text style={{ color: "rgb(81, 140, 150)", marginLeft: 10 }}>
               {min + ":" + sec}
             </Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => this._onVolumeIconPressed()} disabled={this.state.audioOuput == HEADSET}>
               <Icon
-                name={"volume-up"}
+                name={this.state.audioOuput == LOUDSPEAKER ? "volume-up" : (this.state.audioOuput == HEADSET) ? "ios-headset" : "volume-down"}
                 style={{
                   color: "white",
                   marginLeft: 10,
