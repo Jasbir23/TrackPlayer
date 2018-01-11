@@ -13,47 +13,29 @@ import {
   Alert,
   TouchableWithoutFeedback,
   DeviceEventEmitter,
-  AppState
+  AppState,
+  AppRegistry,
+  NativeModules
 } from "react-native";
+import Constants from "./Constants";
+const { RNReactNativeProximityWakeLock: AndroidWakeLock } = NativeModules;
 import { Icon, Thumbnail, Spinner } from "native-base";
 import TrackPlayer from "react-native-track-player";
 import RNFS from "react-native-fs";
 import Seeker from "./Seeker";
 import AudioPlayerStyles from "./audioPlayerStyles.js";
 import { getCurrentTrack } from "react-native-track-player/lib";
-import Proximity from 'react-native-proximity';
-
+import Proximity from "react-native-proximity";
+let self = undefined;
 const { height, width } = Dimensions.get("window");
 let timer = 0;
-const LOUDSPEAKER = 'loudspeaker';
-const EARPIECE_SPEAKER = 'earpiece_speaker';
-const HEADSET = 'headset';
 
-export default class App extends React.Component {
+export default class EnhancedAudioPlayer extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
       loading: false,
-      songs: [
-        {
-          name: "Sorry",
-          url:
-            "https://s3.amazonaws.com/exp-us-standard/audio/playlist-example/Comfort_Fit_-_03_-_Sorry.mp3",
-          id: 0
-        },
-        {
-          name: "Diljit",
-          url:
-            "https://downpwnew.com/upload_file/5570/5738/Latest%20Punjabi%20Mp3%20Songs%202017/El%20Sueno%20-%20Diljit%20Dosanjh%20-%20Mp3%20Song/El%20Sueno%20-%20Diljit%20Dosanjh%20190Kbps.mp3",
-          id: 2
-        },
-        {
-          name: "PodingBear",
-          url:
-            "https://s3.amazonaws.com/exp-us-standard/audio/playlist-example/Podington_Bear_-_Rubber_Robot.mp3",
-          id: 3
-        }
-      ],
+      songs: Constants.defaultPlaylist,
       currentPosition: 0,
       isPlaying: false,
       currentTrack: "Sorry",
@@ -62,13 +44,13 @@ export default class App extends React.Component {
       proximity: false,
       currentSec: 0,
       appState: AppState.currentState,
-      audioOuput: LOUDSPEAKER,
+      audioOuput: Constants.AudioModes.LOUDSPEAKER
     };
+    self = this;
     this._onChangeAudioOutput = this._onChangeAudioOutput.bind(this);
     this._proximityListener = this._proximityListener.bind(this);
     this._onVolumeIconPressed = this._onVolumeIconPressed.bind(this);
   }
-
 
   async setNewTrack(track) {
     let downPath = undefined;
@@ -97,7 +79,14 @@ export default class App extends React.Component {
             artist: "Track Artist"
           }).then(async () => {
             await TrackPlayer.skipToNext();
-            TrackPlayer.play();
+            // TrackPlayer.play();
+            if (
+              this.state.audioOuput === Constants.AudioModes.EARPIECE_SPEAKER
+            ) {
+              TrackPlayer.playWithEarPiece();
+            } else {
+              TrackPlayer.play();
+            }
           });
         } else if (!this.state.internet) {
           Alert.alert("Error", "Cannot play network files w/o internet");
@@ -119,12 +108,16 @@ export default class App extends React.Component {
           artist: "Track Artist"
         }).then(async () => {
           await TrackPlayer.skipToNext();
-          TrackPlayer.play();
+          // TrackPlayer.play();
+          if (this.state.audioOuput === Constants.AudioModes.EARPIECE_SPEAKER) {
+            TrackPlayer.playWithEarPiece();
+          } else {
+            TrackPlayer.play();
+          }
         });
       }
     });
   }
-
 
   renderPlayButton() {
     if (this.state.loading) {
@@ -143,7 +136,6 @@ export default class App extends React.Component {
     );
   }
 
-
   createSeekerListener() {
     this.setState({
       loading: false
@@ -153,8 +145,7 @@ export default class App extends React.Component {
         (await TrackPlayer.getPosition()) / (await TrackPlayer.getDuration());
       let sec = await TrackPlayer.getPosition();
 
-      // Handled Seeker Position on Track Change
-      if(!isFinite(pos)){
+      if (!isFinite(pos)) {
         pos = 0;
       }
 
@@ -166,14 +157,12 @@ export default class App extends React.Component {
     }, 1000);
   }
 
-
   destroySeekerListener() {
     this.setState({
       loading: true
     });
     clearInterval(timer);
   }
-
 
   handleConnectionChange(connection) {
     if (connection.type === "none" || connection.type === "unknown") {
@@ -188,10 +177,9 @@ export default class App extends React.Component {
     }
   }
 
-
   componentDidMount() {
     this.createSeekerListener();
-    AppState.addEventListener('change', this._handleAppStateChange);
+    AppState.addEventListener("change", this._handleAppStateChange);
     NetInfo.addEventListener(
       "connectionChange",
       this.handleConnectionChange.bind(this)
@@ -199,13 +187,12 @@ export default class App extends React.Component {
     Proximity.addListener(this._proximityListener);
   }
 
-
   componentWillUnmount() {
-    // TrackPlayer.stop();
     this.destroySeekerListener();
-    AppState.removeEventListener('change', this._handleAppStateChange);
+    TrackPlayer.destroy();
+    Proximity.removeListener(this._proximityListener);
+    AppState.removeEventListener("change", this._handleAppStateChange);
   }
-
 
   componentWillMount() {
     // Play this to start with
@@ -219,106 +206,146 @@ export default class App extends React.Component {
       });
       TrackPlayer.play();
     });
-    TrackPlayer.registerEventHandler(async data => {
-      let dat = await data;
-      if (
-        dat.type === "playback-error" &&
-        dat.error ===
-          "The operation couldn’t be completed. (RNTrackPlayer.AudioPlayerError error 0.)"
-      ) {
-        RNFS.unlink(
-          "file://" +
-            RNFS.DocumentDirectoryPath +
-            "/" +
-            this.state.currentTrack +
-            ".mp3"
-        ).then(() => {
-          Object.keys(this.state.songs).map((item, index) => {
-            if (this.state.currentTrack === this.state.songs[item].name) {
-              this.setNewTrack(this.state.songs[item]);
-            }
-          });
-        });
-      }
-      if (dat.type === "playback-queue-ended") {
-        TrackPlayer.seekTo(0);
-      }
-      if (dat.type === "headset-plugged-in") {
-        if(Platform.OS != "ios") TrackPlayer.play();
-        this.setState({ audioOuput: HEADSET });
-        Proximity.removeListener(this._proximityListener);
-      }
-      if (dat.type === "headset-plugged-out") {
-        this.setState({ audioOuput: LOUDSPEAKER });
-        Proximity.addListener(this._proximityListener);
-      }
-      if (dat.type === "playback-state") {
-        if (dat.state === "STATE_BUFFERING" || dat.state === 6) {
-          this.setState({
-            loading: true,
-            isPlaying: false
-          });
-        }
-        if (dat.state === "STATE_PLAYING" || dat.state === 3) {
-          this.setState({
-            loading: false,
-            isPlaying: true
-          });
-        }
-        if (dat.state === "STATE_PAUSED" || dat.state === 2) {
-          this.setState({
-            loading: false,
-            isPlaying: false
-          });
-        }
-      }
+    TrackPlayer.updateOptions({
+      capabilities: [TrackPlayer.CAPABILITY_PLAY, TrackPlayer.CAPABILITY_PAUSE],
+      compactCapabilities: [
+        TrackPlayer.CAPABILITY_PLAY,
+        TrackPlayer.CAPABILITY_PAUSE
+      ],
+      stopWithApp: true
     });
   }
 
-  _handleAppStateChange = (nextAppState) => {
-    if (this.state.appState.match(/inactive|background/) && nextAppState === 'active' && !(this.state.audioOuput == HEADSET)) {
+  _handleAppStateChange = nextAppState => {
+    if (
+      this.state.appState.match(/inactive|background/) &&
+      nextAppState === "active" &&
+      !(this.state.audioOuput == Constants.AudioModes.HEADSET)
+    ) {
       Proximity.addListener(this._proximityListener);
-    } else if (nextAppState === 'background'){
+    } else if (nextAppState === "background") {
       Proximity.removeListener(this._proximityListener);
     }
     this.setState({ appState: nextAppState });
-  }
-
+  };
 
   _onChangeAudioOutput() {
-    this.setState({ currentPosition: this.state.currentSec})
-    if(this.state.proximity && this.state.audioOuput != EARPIECE_SPEAKER ) {
+    if (
+      this.state.proximity &&
+      this.state.audioOuput != Constants.AudioModes.EARPIECE_SPEAKER
+    ) {
       TrackPlayer.pause();
       TrackPlayer.playWithEarPiece();
-      this.setState({ audioOuput: EARPIECE_SPEAKER })
+      AndroidWakeLock ? AndroidWakeLock.activate() : null;
+      this.setState({ audioOuput: Constants.AudioModes.EARPIECE_SPEAKER });
       TrackPlayer.seekTo(this.state.currentSec);
-    } else if(!this.state.proximity && this.state.audioOuput != LOUDSPEAKER){
+    } else if (
+      !this.state.proximity &&
+      this.state.audioOuput != Constants.AudioModes.LOUDSPEAKER
+    ) {
       TrackPlayer.pause();
       TrackPlayer.play();
-      this.setState({ audioOuput: LOUDSPEAKER })
+      AndroidWakeLock ? AndroidWakeLock.deactivate() : null;
+      this.setState({ audioOuput: Constants.AudioModes.LOUDSPEAKER });
       TrackPlayer.seekTo(this.state.currentSec);
     }
   }
 
   _proximityListener(data) {
-    if(data) {
-      this.setState({ proximity: data.proximity})
+    if (data) {
+      this.setState({ proximity: data.proximity });
       this._onChangeAudioOutput();
     }
   }
 
   _onVolumeIconPressed() {
-    this.setState({ currentPosition: this.state.currentSec})
-    if(this.state.audioOuput == LOUDSPEAKER) {
+    if (this.state.audioOuput == Constants.AudioModes.LOUDSPEAKER) {
       TrackPlayer.pause();
       TrackPlayer.playWithEarPiece();
-      this.setState({ audioOuput: EARPIECE_SPEAKER })
+      Proximity.removeListener(this._proximityListener);
+      this.setState({ audioOuput: Constants.AudioModes.EARPIECE_SPEAKER });
       TrackPlayer.seekTo(this.state.currentSec);
-    } else {
+    } else if (this.state.audioOuput == Constants.AudioModes.EARPIECE_SPEAKER) {
       TrackPlayer.pause();
       TrackPlayer.play();
-      this.setState({ audioOuput: LOUDSPEAKER })
+      this.setState({ audioOuput: Constants.AudioModes.LOUDSPEAKER });
+      Proximity.addListener(this._proximityListener);
       TrackPlayer.seekTo(this.state.currentSec);
+    }
+  }
+  static handleEvents(dat) {
+    if (dat.type === Constants.playbackEvents.REMOTE_PAUSE) {
+      TrackPlayer.pause();
+    }
+    if (dat.type === Constants.playbackEvents.REMOTE_PLAY) {
+      TrackPlayer.pause();
+      if (self.state.audioOuput === Constants.AudioModes.EARPIECE_SPEAKER) {
+        TrackPlayer.playWithEarPiece();
+      } else {
+        TrackPlayer.play();
+      }
+    }
+    if (
+      dat.type === Constants.playbackEvents.PLAYBACK_ERROR &&
+      dat.error === Constants.playbackEvents.CORRUPT_FILE_ERROR
+    ) {
+      RNFS.unlink(
+        "file://" +
+          RNFS.DocumentDirectoryPath +
+          "/" +
+          self.state.currentTrack +
+          ".mp3"
+      ).then(() => {
+        Object.keys(self.state.songs).map((item, index) => {
+          if (self.state.currentTrack === self.state.songs[item].name) {
+            self.setNewTrack(self.state.songs[item]);
+          }
+        });
+      });
+    }
+    if (dat.type === Constants.playbackEvents.PLAYBACK_QUEUE_ENDED) {
+      TrackPlayer.seekTo(0);
+    }
+    if (dat.type === Constants.playbackEvents.HEADSET_IN) {
+      if (Platform.OS != "ios") TrackPlayer.play();
+      self.setState({ audioOuput: Constants.AudioModes.HEADSET });
+      Proximity.removeListener(self._proximityListener);
+    }
+    if (dat.type === Constants.playbackEvents.HEADSET_OUT) {
+      self.setState({ audioOuput: Constants.AudioModes.LOUDSPEAKER });
+      Proximity.addListener(self._proximityListener);
+    }
+    if (dat.type === Constants.playbackEvents.PLAYBACK_STATE) {
+      if (
+        dat.state === Constants.playbackEvents.STATE_BUFFERING ||
+        dat.state === 6
+      ) {
+        // Proximity.removeListener(self._proximityListener);
+        self.setState({
+          loading: true,
+          isPlaying: false
+        });
+      }
+      if (
+        dat.state === Constants.playbackEvents.STATE_PLAYING ||
+        dat.state === 3
+      ) {
+        // Proximity.addListener(self._proximityListener);
+        self.setState({
+          loading: false,
+          isPlaying: true
+        });
+      }
+      if (
+        dat.state === Constants.playbackEvents.STATE_PAUSED ||
+        dat.state === 2
+      ) {
+        // Proximity.removeListener(self._proximityListener);
+        self.setState({
+          loading: false,
+          isPlaying: false
+        });
+      }
     }
   }
 
@@ -332,52 +359,41 @@ export default class App extends React.Component {
         <StatusBar barStyle="light-content" />
         <View style={AudioPlayerStyles.container}>
           <View style={AudioPlayerStyles.header}>
-            <TouchableOpacity style={{ marginLeft: 15 }}>
+            <TouchableOpacity style={AudioPlayerStyles.headerBackButton}>
               <Icon
                 name="arrow-back"
                 style={{ color: "white", marginTop: 3 }}
               />
             </TouchableOpacity>
           </View>
-          <View
-            style={{
-              flex: 2,
-              justifyContent: "center",
-              alignItems: "center"
-            }}
-          >
+          <View style={AudioPlayerStyles.headerCenterSlab}>
             <Text style={AudioPlayerStyles.headerText}>Les girls</Text>
           </View>
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "flex-end",
-              alignItems: "center",
-              flexDirection: "row"
-            }}
-          >
+          <View style={AudioPlayerStyles.headerRightSlab}>
             <TouchableOpacity>
               <Text style={{ color: "white", marginRight: 15 }}>Modifier</Text>
             </TouchableOpacity>
           </View>
         </View>
-        <View style={{ flex: 8, backgroundColor: "rgb(39, 83, 94)" }}>
+        <View style={AudioPlayerStyles.playerInfoTab}>
           <View style={AudioPlayerStyles.slab1}>
-            <Text style={{ color: "white", marginLeft: 25 }}>
+            <Text style={AudioPlayerStyles.trackName}>
               {this.state.currentTrack}
             </Text>
-            <Text style={{ color: "rgb(81, 140, 150)", marginLeft: 10 }}>
-              {min + ":" + sec}
-            </Text>
-            <TouchableOpacity onPress={() => this._onVolumeIconPressed()} disabled={this.state.audioOuput == HEADSET}>
+            <Text style={AudioPlayerStyles.secMeter}>{min + ":" + sec}</Text>
+            <TouchableOpacity
+              onPress={() => this._onVolumeIconPressed()}
+              disabled={this.state.audioOuput == Constants.AudioModes.HEADSET}
+            >
               <Icon
-                name={this.state.audioOuput == LOUDSPEAKER ? "volume-up" : (this.state.audioOuput == HEADSET) ? "ios-headset" : "volume-down"}
-                style={{
-                  color: "white",
-                  marginLeft: 10,
-                  alignSelf: "center",
-                  marginTop: 3
-                }}
+                name={
+                  this.state.audioOuput == Constants.AudioModes.LOUDSPEAKER
+                    ? "volume-up"
+                    : this.state.audioOuput == Constants.AudioModes.HEADSET
+                      ? "ios-headset"
+                      : "volume-down"
+                }
+                style={AudioPlayerStyles.speakerIcon}
               />
             </TouchableOpacity>
           </View>
@@ -411,7 +427,9 @@ export default class App extends React.Component {
                 if (this.state.internet || this.state.isLocal) {
                   this.state.isPlaying
                     ? TrackPlayer.pause()
-                    : this.state.proximity ? TrackPlayer.playWithEarPiece() : TrackPlayer.play() 
+                    : this.state.proximity
+                      ? TrackPlayer.playWithEarPiece()
+                      : TrackPlayer.play();
                   this.setState({
                     isPlaying: !this.state.isPlaying
                   });
@@ -435,14 +453,7 @@ export default class App extends React.Component {
                 return (
                   <TouchableOpacity onPress={() => this.setNewTrack(item)}>
                     <View style={AudioPlayerStyles.songItem}>
-                      <View
-                        style={{
-                          flex: 1,
-                          justifyContent: "center",
-                          alignItems: "center",
-                          marginLeft: 10
-                        }}
-                      >
+                      <View style={AudioPlayerStyles.thumbnailSongSlab}>
                         <Thumbnail
                           source={{
                             uri:
@@ -451,15 +462,7 @@ export default class App extends React.Component {
                         />
                       </View>
                       <View style={{ flex: 5 }}>
-                        <View
-                          style={{
-                            flex: 1,
-                            flexDirection: "column",
-                            justifyContent: "center",
-                            alignItems: "flex-start",
-                            paddingLeft: 5
-                          }}
-                        >
+                        <View style={AudioPlayerStyles.songNameSlab}>
                           <Text
                             style={{
                               color: "white",
@@ -480,13 +483,7 @@ export default class App extends React.Component {
               }}
             />
           </View>
-          <View
-            style={{
-              flex: 1.5,
-              flexDirection: "column",
-              justifyContent: "flex-start"
-            }}
-          >
+          <View style={AudioPlayerStyles.footerSlab}>
             <Text style={AudioPlayerStyles.footerText}>
               Reception des messages vocaux via:
             </Text>
@@ -514,3 +511,9 @@ export default class App extends React.Component {
     );
   }
 }
+
+AppRegistry.registerComponent("EnhancedAudioPlayer", () => EnhancedAudioPlayer);
+TrackPlayer.registerEventHandler(async data => {
+  let dat = await data;
+  EnhancedAudioPlayer.handleEvents(dat);
+});

@@ -30,7 +30,8 @@ public class MainApplication extends Application implements ReactApplication {
             new RNProximityPackage(),
             new RNFSPackage(),
             new VectorIconsPackage(),
-            new TrackPlayer()
+            new TrackPlayer(),
+            new RNReactNativeProximityWakeLockPackage()
       );
     }
 
