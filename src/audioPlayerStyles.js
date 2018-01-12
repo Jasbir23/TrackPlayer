@@ -54,6 +54,12 @@ let styles = {
     flexDirection: "column",
     justifyContent: "flex-start"
   },
+  songNameText: {
+    color: "white",
+    marginBottom: 3,
+    fontSize: 15
+  },
+  contactNumberText: { color: "white", fontSize: 12 },
   headerText: {
     color: "white",
     fontWeight: "bold"

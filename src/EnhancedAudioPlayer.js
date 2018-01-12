@@ -6,13 +6,10 @@ import {
   Dimensions,
   FlatList,
   StatusBar,
-  PanResponder,
   NetInfo,
   Platform,
   Animated,
   Alert,
-  TouchableWithoutFeedback,
-  DeviceEventEmitter,
   AppState,
   AppRegistry,
   NativeModules
@@ -165,6 +162,7 @@ export default class EnhancedAudioPlayer extends React.Component {
   }
 
   handleConnectionChange(connection) {
+    console.log(connection);
     if (connection.type === "none" || connection.type === "unknown") {
       this.setState({
         internet: false
@@ -190,6 +188,10 @@ export default class EnhancedAudioPlayer extends React.Component {
   componentWillUnmount() {
     this.destroySeekerListener();
     TrackPlayer.destroy();
+    NetInfo.removeEventListener(
+      "connectionChange",
+      this.handleConnectionChange.bind(this)
+    );
     Proximity.removeListener(this._proximityListener);
     AppState.removeEventListener("change", this._handleAppStateChange);
   }
@@ -232,20 +234,20 @@ export default class EnhancedAudioPlayer extends React.Component {
   _onChangeAudioOutput() {
     if (
       this.state.proximity &&
-      this.state.audioOuput != Constants.AudioModes.EARPIECE_SPEAKER
+      this.state.audioOuput != Constants.AudioModes.EARPIECE_SPEAKER &&
+      this.state.isPlaying
     ) {
       TrackPlayer.pause();
       TrackPlayer.playWithEarPiece();
-      AndroidWakeLock ? AndroidWakeLock.activate() : null;
       this.setState({ audioOuput: Constants.AudioModes.EARPIECE_SPEAKER });
       TrackPlayer.seekTo(this.state.currentSec);
     } else if (
       !this.state.proximity &&
-      this.state.audioOuput != Constants.AudioModes.LOUDSPEAKER
+      this.state.audioOuput != Constants.AudioModes.LOUDSPEAKER &&
+      this.state.isPlaying
     ) {
       TrackPlayer.pause();
       TrackPlayer.play();
-      AndroidWakeLock ? AndroidWakeLock.deactivate() : null;
       this.setState({ audioOuput: Constants.AudioModes.LOUDSPEAKER });
       TrackPlayer.seekTo(this.state.currentSec);
     }
@@ -253,6 +255,11 @@ export default class EnhancedAudioPlayer extends React.Component {
 
   _proximityListener(data) {
     if (data) {
+      if (data.proximity) {
+        AndroidWakeLock ? AndroidWakeLock.activate() : null;
+      } else if (!data.proximity) {
+        AndroidWakeLock ? AndroidWakeLock.deactivate() : null;
+      }
       this.setState({ proximity: data.proximity });
       this._onChangeAudioOutput();
     }
@@ -262,14 +269,14 @@ export default class EnhancedAudioPlayer extends React.Component {
     if (this.state.audioOuput == Constants.AudioModes.LOUDSPEAKER) {
       TrackPlayer.pause();
       TrackPlayer.playWithEarPiece();
-      Proximity.removeListener(this._proximityListener);
+      // Proximity.removeListener(this._proximityListener);
       this.setState({ audioOuput: Constants.AudioModes.EARPIECE_SPEAKER });
       TrackPlayer.seekTo(this.state.currentSec);
     } else if (this.state.audioOuput == Constants.AudioModes.EARPIECE_SPEAKER) {
       TrackPlayer.pause();
       TrackPlayer.play();
       this.setState({ audioOuput: Constants.AudioModes.LOUDSPEAKER });
-      Proximity.addListener(this._proximityListener);
+      // Proximity.addListener(this._proximityListener);
       TrackPlayer.seekTo(this.state.currentSec);
     }
   }
@@ -423,6 +430,7 @@ export default class EnhancedAudioPlayer extends React.Component {
             />
             <TouchableOpacity
               style={AudioPlayerStyles.playButton}
+              disabled={this.state.loading}
               onPress={() => {
                 if (this.state.internet || this.state.isLocal) {
                   this.state.isPlaying
@@ -463,16 +471,10 @@ export default class EnhancedAudioPlayer extends React.Component {
                       </View>
                       <View style={{ flex: 5 }}>
                         <View style={AudioPlayerStyles.songNameSlab}>
-                          <Text
-                            style={{
-                              color: "white",
-                              marginBottom: 3,
-                              fontSize: 15
-                            }}
-                          >
+                          <Text style={AudioPlayerStyles.songNameText}>
                             {item.name}
                           </Text>
-                          <Text style={{ color: "white", fontSize: 12 }}>
+                          <Text style={AudioPlayerStyles.contactNumberText}>
                             +33 6 77 XX 89 65
                           </Text>
                         </View>
