@@ -9,18 +9,21 @@ export default (Constants = {
       name: "Sorry",
       url:
         "https://s3.amazonaws.com/exp-us-standard/audio/playlist-example/Comfort_Fit_-_03_-_Sorry.mp3",
+      contactNumber: "+33 09924 3345",
       id: 0
     },
     {
       name: "Diljit",
       url:
         "https://downpwnew.com/upload_file/5570/5738/Latest%20Punjabi%20Mp3%20Songs%202017/El%20Sueno%20-%20Diljit%20Dosanjh%20-%20Mp3%20Song/El%20Sueno%20-%20Diljit%20Dosanjh%20190Kbps.mp3",
+      contactNumber: "+43 97824 3345",
       id: 2
     },
     {
       name: "PodingBear",
       url:
         "https://s3.amazonaws.com/exp-us-standard/audio/playlist-example/Podington_Bear_-_Rubber_Robot.mp3",
+      contactNumber: "+52 98678 3345",
       id: 3
     }
   ],

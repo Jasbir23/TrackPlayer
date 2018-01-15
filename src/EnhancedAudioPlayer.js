@@ -21,7 +21,6 @@ import TrackPlayer from "react-native-track-player";
 import RNFS from "react-native-fs";
 import Seeker from "./Seeker";
 import AudioPlayerStyles from "./audioPlayerStyles.js";
-import { getCurrentTrack } from "react-native-track-player/lib";
 import Proximity from "react-native-proximity";
 let self = undefined;
 const { height, width } = Dimensions.get("window");
@@ -35,7 +34,7 @@ export default class EnhancedAudioPlayer extends React.Component {
       songs: Constants.defaultPlaylist,
       currentPosition: 0,
       isPlaying: false,
-      currentTrack: "Sorry",
+      currentTrack: undefined,
       internet: true,
       isLocal: false,
       proximity: false,
@@ -49,71 +48,113 @@ export default class EnhancedAudioPlayer extends React.Component {
     this._onVolumeIconPressed = this._onVolumeIconPressed.bind(this);
   }
 
-  async setNewTrack(track) {
-    let downPath = undefined;
-    RNFS.exists(
-      RNFS.DocumentDirectoryPath + "/" + track.name + ".mp3"
-    ).then(async result => {
-      if (result === false) {
-        // file not found, download it
-        this.setState({
-          isLocal: false
-        });
-        let url = track.url;
-        let path = RNFS.DocumentDirectoryPath + "/" + track.name + ".mp3";
-        if (this.state.internet) {
-          RNFS.downloadFile({
-            fromUrl: url,
-            toFile: path
-          }).promise.then(res => {});
-          this.setState({
-            currentTrack: track.name
-          });
-          TrackPlayer.add({
-            id: "track" + track.id,
-            url: track.url,
-            title: track.name,
-            artist: "Track Artist"
-          }).then(async () => {
-            await TrackPlayer.skipToNext();
-            // TrackPlayer.play();
-            if (
-              this.state.audioOuput === Constants.AudioModes.EARPIECE_SPEAKER
-            ) {
-              TrackPlayer.playWithEarPiece();
-            } else {
-              TrackPlayer.play();
-            }
-          });
-        } else if (!this.state.internet) {
-          Alert.alert("Error", "Cannot play network files w/o internet");
+  componentDidMount() {
+    TrackPlayer.setupPlayer().then(async () => {});
+    TrackPlayer.updateOptions({
+      capabilities: [TrackPlayer.CAPABILITY_PLAY, TrackPlayer.CAPABILITY_PAUSE],
+      compactCapabilities: [
+        TrackPlayer.CAPABILITY_PLAY,
+        TrackPlayer.CAPABILITY_PAUSE
+      ],
+      stopWithApp: true
+    });
+  }
+
+  componentWillMount() {
+    this.createSeekerListener();
+    AppState.addEventListener("change", this._handleAppStateChange);
+    NetInfo.addEventListener(
+      "connectionChange",
+      this.handleConnectionChange.bind(this)
+    );
+    Proximity.addListener(this._proximityListener);
+    this.checkForLocalFiles(this.state.songs);
+  }
+
+  componentWillUnmount() {
+    this.destroySeekerListener();
+    TrackPlayer.destroy();
+    NetInfo.removeEventListener(
+      "connectionChange",
+      this.handleConnectionChange.bind(this)
+    );
+    Proximity.removeListener(this._proximityListener);
+    AppState.removeEventListener("change", this._handleAppStateChange);
+  }
+  checkForLocalFiles(playListArray) {
+    playListArray.map((item, index) => {
+      RNFS.exists(
+        RNFS.DocumentDirectoryPath + "/" + item.name + ".mp3"
+      ).then(result => {
+        if (!result) {
+          playListArray[index].isLocal = undefined;
+          playListArray[index].downPath = undefined;
         }
-      } else {
-        // file found, use local path
+        if (result === true) {
+          playListArray[index].isLocal = true;
+          playListArray[index].downPath =
+            "file://" + RNFS.DocumentDirectoryPath + "/" + item.name + ".mp3";
+        }
+      });
+    });
+  }
+  downloadFile(track) {
+    RNFS.downloadFile({
+      fromUrl: track.url,
+      toFile: RNFS.DocumentDirectoryPath + "/" + track.name + ".mp3"
+    }).promise.then(res => {
+      if (res) {
+        this.checkForLocalFiles(this.state.songs);
+      }
+    });
+  }
+
+  async setNewTrack(track) {
+    TrackPlayer.reset();
+    if (track.isLocal) {
+      TrackPlayer.add({
+        id: "track" + track.id,
+        url: track.downPath,
+        title: track.name,
+        artist: "Track Artist"
+      }).then(async () => {
+        TrackPlayer.play();
+        TrackPlayer.pause();
+        this.state.audioOuput === Constants.AudioModes.EARPIECE_SPEAKER
+          ? TrackPlayer.playWithEarPiece()
+          : TrackPlayer.play();
         this.setState({
+          currentTrack: track.name,
           isLocal: true
         });
-        downPath =
-          "file://" + RNFS.DocumentDirectoryPath + "/" + track.name + ".mp3";
-        this.setState({
-          currentTrack: track.name
-        });
+      });
+    } else if (!track.isLocal) {
+      if (this.state.internet) {
+        this.downloadFile(track);
         TrackPlayer.add({
           id: "track" + track.id,
-          url: downPath ? downPath : track.url,
+          url: track.url,
           title: track.name,
           artist: "Track Artist"
         }).then(async () => {
-          await TrackPlayer.skipToNext();
-          // TrackPlayer.play();
-          if (this.state.audioOuput === Constants.AudioModes.EARPIECE_SPEAKER) {
-            TrackPlayer.playWithEarPiece();
-          } else {
-            TrackPlayer.play();
-          }
+          TrackPlayer.play();
+          TrackPlayer.pause();
+          this.state.audioOuput === Constants.AudioModes.EARPIECE_SPEAKER
+            ? TrackPlayer.playWithEarPiece()
+            : TrackPlayer.play();
         });
+        this.setState({
+          currentTrack: track.name,
+          isLocal: false
+        });
+      } else if (!this.state.internet) {
+        this.setState({
+          isLocal: false
+        });
+        TrackPlayer.reset();
+        Alert.alert("No internet found");
       }
-    });
+    }
   }
 
   renderPlayButton() {
@@ -142,8 +183,9 @@ export default class EnhancedAudioPlayer extends React.Component {
         (await TrackPlayer.getPosition()) / (await TrackPlayer.getDuration());
       let sec = await TrackPlayer.getPosition();
 
-      if (!isFinite(pos)) {
+      if (!isFinite(pos) || sec < 0 || pos < 0) {
         pos = 0;
+        sec = 0;
       }
 
       this.setState({
@@ -162,60 +204,20 @@ export default class EnhancedAudioPlayer extends React.Component {
   }
 
   handleConnectionChange(connection) {
-    console.log(connection);
     if (connection.type === "none" || connection.type === "unknown") {
       this.setState({
         internet: false
       });
+      if (!this.state.isLocal) {
+        TrackPlayer ? TrackPlayer.reset() : null;
+        Alert.alert("No internet found");
+      }
     } else {
       this.setState({
         internet: true,
         loading: false
       });
     }
-  }
-
-  componentDidMount() {
-    this.createSeekerListener();
-    AppState.addEventListener("change", this._handleAppStateChange);
-    NetInfo.addEventListener(
-      "connectionChange",
-      this.handleConnectionChange.bind(this)
-    );
-    Proximity.addListener(this._proximityListener);
-  }
-
-  componentWillUnmount() {
-    this.destroySeekerListener();
-    TrackPlayer.destroy();
-    NetInfo.removeEventListener(
-      "connectionChange",
-      this.handleConnectionChange.bind(this)
-    );
-    Proximity.removeListener(this._proximityListener);
-    AppState.removeEventListener("change", this._handleAppStateChange);
-  }
-
-  componentWillMount() {
-    // Play this to start with
-    TrackPlayer.setupPlayer().then(async () => {
-      await TrackPlayer.add({
-        id: "trackX",
-        url:
-          "https://s3.amazonaws.com/exp-us-standard/audio/playlist-example/Comfort_Fit_-_03_-_Sorry.mp3",
-        title: "sorrymp3",
-        artist: "Jazzy"
-      });
-      TrackPlayer.play();
-    });
-    TrackPlayer.updateOptions({
-      capabilities: [TrackPlayer.CAPABILITY_PLAY, TrackPlayer.CAPABILITY_PAUSE],
-      compactCapabilities: [
-        TrackPlayer.CAPABILITY_PLAY,
-        TrackPlayer.CAPABILITY_PAUSE
-      ],
-      stopWithApp: true
-    });
   }
 
   _handleAppStateChange = nextAppState => {
@@ -232,23 +234,15 @@ export default class EnhancedAudioPlayer extends React.Component {
   };
 
   _onChangeAudioOutput() {
-    if (
-      this.state.proximity &&
-      this.state.audioOuput != Constants.AudioModes.EARPIECE_SPEAKER &&
-      this.state.isPlaying
-    ) {
-      TrackPlayer.pause();
-      TrackPlayer.playWithEarPiece();
-      this.setState({ audioOuput: Constants.AudioModes.EARPIECE_SPEAKER });
-      TrackPlayer.seekTo(this.state.currentSec);
-    } else if (
-      !this.state.proximity &&
-      this.state.audioOuput != Constants.AudioModes.LOUDSPEAKER &&
-      this.state.isPlaying
-    ) {
-      TrackPlayer.pause();
-      TrackPlayer.play();
-      this.setState({ audioOuput: Constants.AudioModes.LOUDSPEAKER });
+    TrackPlayer.pause();
+    if (this.state.internet || this.state.isLocal) {
+      if (this.state.proximity && this.state.isPlaying) {
+        TrackPlayer.playWithEarPiece();
+        this.setState({ audioOuput: Constants.AudioModes.EARPIECE_SPEAKER });
+      } else if (!this.state.proximity && this.state.isPlaying) {
+        TrackPlayer.play();
+        this.setState({ audioOuput: Constants.AudioModes.LOUDSPEAKER });
+      }
       TrackPlayer.seekTo(this.state.currentSec);
     }
   }
@@ -266,31 +260,28 @@ export default class EnhancedAudioPlayer extends React.Component {
   }
 
   _onVolumeIconPressed() {
-    if (this.state.audioOuput == Constants.AudioModes.LOUDSPEAKER) {
-      TrackPlayer.pause();
-      TrackPlayer.playWithEarPiece();
-      // Proximity.removeListener(this._proximityListener);
-      this.setState({ audioOuput: Constants.AudioModes.EARPIECE_SPEAKER });
-      TrackPlayer.seekTo(this.state.currentSec);
-    } else if (this.state.audioOuput == Constants.AudioModes.EARPIECE_SPEAKER) {
-      TrackPlayer.pause();
-      TrackPlayer.play();
-      this.setState({ audioOuput: Constants.AudioModes.LOUDSPEAKER });
-      // Proximity.addListener(this._proximityListener);
-      TrackPlayer.seekTo(this.state.currentSec);
+    if (this.state.internet || this.state.isLocal) {
+      if (this.state.audioOuput == Constants.AudioModes.LOUDSPEAKER) {
+        TrackPlayer.pause();
+        TrackPlayer.playWithEarPiece();
+        this.setState({ audioOuput: Constants.AudioModes.EARPIECE_SPEAKER });
+        TrackPlayer.seekTo(this.state.currentSec);
+      } else if (
+        this.state.audioOuput == Constants.AudioModes.EARPIECE_SPEAKER
+      ) {
+        TrackPlayer.pause();
+        TrackPlayer.play();
+        this.setState({ audioOuput: Constants.AudioModes.LOUDSPEAKER });
+        TrackPlayer.seekTo(this.state.currentSec);
+      }
     }
   }
   static handleEvents(dat) {
     if (dat.type === Constants.playbackEvents.REMOTE_PAUSE) {
-      TrackPlayer.pause();
+      self.playButtonPressed();
     }
     if (dat.type === Constants.playbackEvents.REMOTE_PLAY) {
-      TrackPlayer.pause();
-      if (self.state.audioOuput === Constants.AudioModes.EARPIECE_SPEAKER) {
-        TrackPlayer.playWithEarPiece();
-      } else {
-        TrackPlayer.play();
-      }
+      self.playButtonPressed();
     }
     if (
       dat.type === Constants.playbackEvents.PLAYBACK_ERROR &&
@@ -303,11 +294,11 @@ export default class EnhancedAudioPlayer extends React.Component {
           self.state.currentTrack +
           ".mp3"
       ).then(() => {
-        Object.keys(self.state.songs).map((item, index) => {
-          if (self.state.currentTrack === self.state.songs[item].name) {
-            self.setNewTrack(self.state.songs[item]);
-          }
-        });
+        this.checkForLocalFiles(this.state.songs);
+        TrackPlayer.reset();
+        Alert.alert(
+          "Corrupted Local file found and deleted, Player has been reset"
+        );
       });
     }
     if (dat.type === Constants.playbackEvents.PLAYBACK_QUEUE_ENDED) {
@@ -327,7 +318,6 @@ export default class EnhancedAudioPlayer extends React.Component {
         dat.state === Constants.playbackEvents.STATE_BUFFERING ||
         dat.state === 6
       ) {
-        // Proximity.removeListener(self._proximityListener);
         self.setState({
           loading: true,
           isPlaying: false
@@ -337,7 +327,6 @@ export default class EnhancedAudioPlayer extends React.Component {
         dat.state === Constants.playbackEvents.STATE_PLAYING ||
         dat.state === 3
       ) {
-        // Proximity.addListener(self._proximityListener);
         self.setState({
           loading: false,
           isPlaying: true
@@ -347,12 +336,27 @@ export default class EnhancedAudioPlayer extends React.Component {
         dat.state === Constants.playbackEvents.STATE_PAUSED ||
         dat.state === 2
       ) {
-        // Proximity.removeListener(self._proximityListener);
         self.setState({
           loading: false,
           isPlaying: false
         });
       }
+    }
+  }
+  playButtonPressed() {
+    if (this.state.internet || this.state.isLocal) {
+      TrackPlayer.pause();
+      this.state.isPlaying
+        ? null
+        : this.state.audioOuput === Constants.AudioModes.EARPIECE_SPEAKER
+          ? TrackPlayer.playWithEarPiece()
+          : TrackPlayer.play();
+      this.setState({
+        isPlaying: !this.state.isPlaying
+      });
+    } else {
+      TrackPlayer.reset();
+      Alert.alert("No internet found");
     }
   }
 
@@ -385,7 +389,7 @@ export default class EnhancedAudioPlayer extends React.Component {
         <View style={AudioPlayerStyles.playerInfoTab}>
           <View style={AudioPlayerStyles.slab1}>
             <Text style={AudioPlayerStyles.trackName}>
-              {this.state.currentTrack}
+              {this.state.currentTrack ? this.state.currentTrack : "----"}
             </Text>
             <Text style={AudioPlayerStyles.secMeter}>{min + ":" + sec}</Text>
             <TouchableOpacity
@@ -430,28 +434,20 @@ export default class EnhancedAudioPlayer extends React.Component {
             />
             <TouchableOpacity
               style={AudioPlayerStyles.playButton}
-              disabled={this.state.loading}
+              disabled={
+                this.state.loading || this.state.currentTrack === undefined
+              }
               onPress={() => {
-                if (this.state.internet || this.state.isLocal) {
-                  this.state.isPlaying
-                    ? TrackPlayer.pause()
-                    : this.state.proximity
-                      ? TrackPlayer.playWithEarPiece()
-                      : TrackPlayer.play();
-                  this.setState({
-                    isPlaying: !this.state.isPlaying
-                  });
-                } else {
-                  TrackPlayer.pause();
-                  Alert.alert("No internet found");
-                }
+                this.playButtonPressed();
               }}
             >
               {this.renderPlayButton()}
             </TouchableOpacity>
           </View>
           <View style={AudioPlayerStyles.totalSongs}>
-            <Text style={{ color: "white" }}>Total Songs : 30</Text>
+            <Text style={{ color: "white" }}>
+              {"Total Songs : " + this.state.songs.length}
+            </Text>
           </View>
           <View style={{ flex: 3 }}>
             <FlatList
@@ -475,7 +471,7 @@ export default class EnhancedAudioPlayer extends React.Component {
                             {item.name}
                           </Text>
                           <Text style={AudioPlayerStyles.contactNumberText}>
-                            +33 6 77 XX 89 65
+                            {item.contactNumber}
                           </Text>
                         </View>
                       </View>
