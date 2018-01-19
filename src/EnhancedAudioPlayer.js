@@ -15,14 +15,17 @@ import {
   AppRegistry,
   NativeModules
 } from "react-native";
+
+// helper functions
 import checkForLocalFiles from "./helpers/checkLocalFiles";
 import downloadFile from "./helpers/downloadFile";
 import setNewTrack from "./helpers/setNewTrack";
 import handleConnectionChange from "./helpers/handleConnectionChange";
-import handleEvents from "./helpers/handleEvents";
 import changeAudioModePressed from "./helpers/changeAudioModePressed";
 import playButtonPressed from "./helpers/playButtonPressed";
 import getPlayButton from "./helpers/renderPlayButton";
+
+// Constant values
 import Constants from "./Constants";
 const { RNReactNativeProximityWakeLock: AndroidWakeLock } = NativeModules;
 import { Icon, Thumbnail } from "native-base";
@@ -58,6 +61,7 @@ export default class EnhancedAudioPlayer extends Component<{}> {
   }
 
   componentDidMount() {
+    // Initialize the player
     TrackPlayer.setupPlayer().then(async () => {});
     TrackPlayer.updateOptions({
       capabilities: [TrackPlayer.CAPABILITY_PLAY, TrackPlayer.CAPABILITY_PAUSE],
@@ -71,6 +75,7 @@ export default class EnhancedAudioPlayer extends Component<{}> {
 
   componentWillMount() {
     isUnmounted = false;
+    // Added all listeners
     this.createSeekerListener();
     AppState.addEventListener("change", this._handleAppStateChange);
     NetInfo.addEventListener(
@@ -85,6 +90,7 @@ export default class EnhancedAudioPlayer extends Component<{}> {
 
   componentWillUnmount() {
     isUnmounted = true;
+    // Removed all listeners
     this.destroySeekerListener();
     NetInfo.removeEventListener(
       "connectionChange",
@@ -93,7 +99,10 @@ export default class EnhancedAudioPlayer extends Component<{}> {
     Proximity.removeListener(this._proximityListener);
     AppState.removeEventListener("change", this._handleAppStateChange);
   }
+
+  // Download the file
   async downloadFile(track) {
+    // handled android close issue
     if ((await downloadFile(track)) && !isUnmounted) {
       this.setState({
         songs: checkForLocalFiles(this.state.songs)
@@ -112,7 +121,11 @@ export default class EnhancedAudioPlayer extends Component<{}> {
       currentTrack: res.currentTrack,
       isLocal: res.isLocal
     });
-    if (res.currentTrack !== undefined && res.isLocal === false) {
+    if (
+      res.currentTrack !== undefined &&
+      res.isLocal === false &&
+      this.state.internet
+    ) {
       this.downloadFile(track);
     }
   }
@@ -139,6 +152,7 @@ export default class EnhancedAudioPlayer extends Component<{}> {
         currentPosition: pos ? pos * width : 0,
         currentSec: sec ? sec : 0
       });
+      // Calling static function of Seeker.js
       Seeker.updatePosition(pos ? width - 20 - pos * (width - 20) : width - 20);
     }, 1000);
   }
@@ -156,6 +170,7 @@ export default class EnhancedAudioPlayer extends Component<{}> {
     );
   }
 
+  // AppState change handler
   _handleAppStateChange = nextAppState => {
     if (
       this.state.appState.match(/inactive|background/) &&
@@ -168,6 +183,7 @@ export default class EnhancedAudioPlayer extends Component<{}> {
     }
   };
 
+  // Proximity change handler
   _proximityListener(data) {
     if (data) {
       if (data.proximity) {
@@ -191,6 +207,7 @@ export default class EnhancedAudioPlayer extends Component<{}> {
     }
   }
 
+  // Audio Mode button press handler
   changeAudioModePressed() {
     this.setState(
       changeAudioModePressed(
@@ -202,11 +219,86 @@ export default class EnhancedAudioPlayer extends Component<{}> {
       )
     );
   }
+
+  // Handle playback events of TrackPlayer class
   static async handleEvents(dat) {
     if (!isUnmounted && dat.type !== "playback-unbind") {
-      handleEvents(dat, self, TrackPlayer, checkForLocalFiles);
+      if (dat.type === Constants.playbackEvents.REMOTE_PAUSE) {
+        self.playButtonPressed();
+      }
+      if (dat.type === Constants.playbackEvents.REMOTE_PLAY) {
+        self.playButtonPressed();
+      }
+      // Incase download is half done, delete and download again
+      if (
+        dat.type === Constants.playbackEvents.PLAYBACK_ERROR &&
+        dat.error === Constants.playbackEvents.CORRUPT_FILE_ERROR
+      ) {
+        RNFS.unlink(
+          "file://" +
+            RNFS.DocumentDirectoryPath +
+            "/" +
+            self.state.currentTrack +
+            ".mp3"
+        ).then(() => {
+          self.setState({
+            songs: checkForLocalFiles(self.state.songs)
+          });
+          TrackPlayer.reset();
+          Alert.alert(
+            "Corrupted Local file found and deleted, Player has been reset"
+          );
+        });
+      }
+      if (dat.type === Constants.playbackEvents.PLAYBACK_QUEUE_ENDED) {
+        TrackPlayer.seekTo(0);
+      }
+      if (dat.type === Constants.playbackEvents.HEADSET_IN) {
+        if (Platform.OS != "ios") TrackPlayer.play();
+        self.setState({ audioOuput: Constants.AudioModes.HEADSET });
+        Proximity.removeListener(self._proximityListener);
+      }
+      if (dat.type === Constants.playbackEvents.HEADSET_OUT) {
+        if (Platform.OS == "ios") {
+          TrackPlayer.pause();
+          TrackPlayer.play();
+        }
+        self.setState({ audioOuput: Constants.AudioModes.LOUDSPEAKER });
+        Proximity.addListener(self._proximityListener);
+      }
+      if (dat.type === Constants.playbackEvents.PLAYBACK_STATE) {
+        if (
+          dat.state === Constants.playbackEvents.STATE_BUFFERING ||
+          dat.state === 6
+        ) {
+          self.setState({
+            loading: true,
+            isPlaying: false
+          });
+        }
+        if (
+          dat.state === Constants.playbackEvents.STATE_PLAYING ||
+          dat.state === 3
+        ) {
+          self.setState({
+            loading: false,
+            isPlaying: true
+          });
+        }
+        if (
+          dat.state === Constants.playbackEvents.STATE_PAUSED ||
+          dat.state === 2
+        ) {
+          self.setState({
+            loading: false,
+            isPlaying: false
+          });
+        }
+      }
     }
   }
+
+  // Play button press handler
   playButtonPressed() {
     this.setState(
       playButtonPressed(
@@ -220,6 +312,7 @@ export default class EnhancedAudioPlayer extends Component<{}> {
   }
 
   render() {
+    // seeker value update
     let sec = Math.floor(this.state.currentSec % 60);
     let min = Math.floor(this.state.currentSec / 60);
     sec < 10 ? (sec = "0" + sec) : (sec = sec);
@@ -375,6 +468,7 @@ export default class EnhancedAudioPlayer extends Component<{}> {
   }
 }
 
+// Fix for android close issue
 AppRegistry.registerComponent("EnhancedAudioPlayer", () => EnhancedAudioPlayer);
 TrackPlayer.registerEventHandler(async data => {
   let dat = await data;
